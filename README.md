@@ -1,9 +1,11 @@
 
 # HamSandwich Lightning Fee Manager 🚦
 
-[![codecov](https://codecov.io/gh/btx-lnd/lazy-lnd/graph/badge.svg?token=YMDXHLDLF4)](https://codecov.io/gh/btx-lnd/lazy-lnd)
-
 [![Run Python Tests and Report Coverage](https://github.com/btx-lnd/lazy-lnd/actions/workflows/test.yml/badge.svg)](https://github.com/btx-lnd/lazy-lnd/actions/workflows/test.yml)
+
+[![Dependabot](https://badgen.net/badge/Dependabot/enabled/green?icon=dependabot)](https://dependabot.com/)
+[![CodeQL](https://github.com/btx-lnd/lazy-lnd/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/btx-lnd/lazy-lnd/actions/workflows/github-code-scanning/codeql)
+[![codecov](https://codecov.io/gh/btx-lnd/lazy-lnd/graph/badge.svg?token=YMDXHLDLF4)](https://codecov.io/gh/btx-lnd/lazy-lnd)
 
 Welcome to **HamSandwich's Lightning Autotuner**!  
 This fee/routing engine dynamically optimizes Lightning Network channel fees using adaptive rules, peer stats, HTLC event telemetry, and (future) ML.  
@@ -278,4 +280,17 @@ Want to show your appreciation?
 - Zap me at zap@ln.stx.ie
 - Open a channel with my node! Find it at https://amboss.space/c/btx
 
+---
+
+## 🔨Tools Used
+
+![Bitcoin](https://img.shields.io/badge/bitcoin-2F3134?style=for-the-badge&logo=bitcoin&logoColor=white)
+![ChatGPT](https://img.shields.io/badge/chatGPT-74aa9c?style=for-the-badge&logo=openai&logoColor=white)
+![GitHub Copilot](https://img.shields.io/badge/github_copilot-8957E5?style=for-the-badge&logo=github-copilot&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/github%20actions-%232671E5.svg?style=for-the-badge&logo=githubactions&logoColor=white)
+![Pytest](https://img.shields.io/badge/pytest-%23ffffff.svg?style=for-the-badge&logo=pytest&logoColor=2f9fe3)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![PyPi](https://img.shields.io/badge/pypi-%23ececec.svg?style=for-the-badge&logo=pypi&logoColor=1f73b7)
+
+and, most importantly [Working Copy](https://apps.apple.com/gb/app/working-copy-git-client/id896694807)
 
