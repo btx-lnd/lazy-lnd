@@ -1,6 +1,10 @@
 
 # HamSandwich Lightning Fee Manager 🚦
 
+[![codecov](https://codecov.io/gh/btx-lnd/lazy-lnd/graph/badge.svg?token=YMDXHLDLF4)](https://codecov.io/gh/btx-lnd/lazy-lnd)
+
+[![Run Python Tests and Report Coverage](https://github.com/btx-lnd/lazy-lnd/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/btx-lnd/lazy-lnd/actions/workflows/test.yml)
+
 Welcome to **HamSandwich's Lightning Autotuner**!  
 This fee/routing engine dynamically optimizes Lightning Network channel fees using adaptive rules, peer stats, HTLC event telemetry, and (future) ML.  
 
