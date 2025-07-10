@@ -1,0 +1,35 @@
+services:
+  autotune:
+    image: autotune:v0.6
+    container_name: autotune
+    volumes:
+      - /mnt/bitcoin/hamsandwich/autotune/data:/app/data
+      - /mnt/bitcoin/hamsandwich/autotune/log:/app/log
+      - /mnt/bitcoin/hamsandwich/autotune/config:/app/config
+      - /mnt/bitcoin/hamsandwich/charge/config.toml:/app/chargelnd/config.toml
+      - /mnt/bitcoin/hamsandwich/autotune/bos:/root/.bos
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["python", "-u", "main.py", "--apply"]
+    networks:
+      - lightning
+
+  htlc-dryrun:
+    image: autotune:v0.6
+    container_name: htlc-dryrun
+    volumes:
+      - /mnt/bitcoin/hamsandwich/autotune/log:/app/log
+      - /mnt/bitcoin/hamsandwich/autotune/config:/app/config
+
+    command: [
+      "/bin/bash", 
+      "-c", 
+      "python -u htlc.py"
+    ]
+    networks:
+      - lightning
+    restart: "no"
+
+
+networks:
+  lightning:
+    external: true
