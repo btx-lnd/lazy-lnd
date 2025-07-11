@@ -26,7 +26,6 @@ def test_get_htlc_sizes(section, alias, reserve_deduction, htlc_min_capacity,
                        exp_max_htlc, exp_outbound, exp_skip_out, exp_skip_in):
     result_section, outbound, skip_out, skip_in = get_htlc_sizes(
         section.copy(),  # Don't mutate the original between tests
-        alias,
         reserve_deduction,
         htlc_min_capacity
     )

@@ -313,7 +313,7 @@ def get_adaptive_alpha(section, alpha):
     return (alpha["balanced_1d"], alpha["balanced_5d"], alpha["balanced_7d"])
 
 
-def get_htlc_sizes(section, alias, reserve_deduction, htlc_min_capacity):
+def get_htlc_sizes(section, reserve_deduction, htlc_min_capacity):
 
     skip_outbound_fee_adjust = section.get("peer_outbound_percent", 0) < htlc_min_capacity
     skip_inbound_fee_adjust = (1 - section.get("peer_outbound_percent", 0)) < htlc_min_capacity
@@ -909,7 +909,7 @@ def recommend_and_update_fees(
 
     # 3. HTLC & fee logic
     state, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust = get_htlc_sizes(
-        state, alias, policy.htlc.reserve_deduction, policy.htlc.min_capacity
+        state, policy.htlc.reserve_deduction, policy.htlc.min_capacity
     )
 
     state, final_report_logs, old_fees, new_fees, rule_ids = adjust_channel_fees(
