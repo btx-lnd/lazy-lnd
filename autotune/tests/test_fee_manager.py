@@ -139,7 +139,6 @@ class TestFeeManager(unittest.TestCase):
     @patch(
         "autotune.autotune.get_forwarding_events", return_value=("fwd_day", "fwd_int")
     )
-    @patch("autotune.autotune.get_peers", return_value="raw_peers")
     @patch(
         "autotune.autotune.recommend_and_update_fees",
         return_value=(
@@ -166,7 +165,6 @@ class TestFeeManager(unittest.TestCase):
         mock_save,
         mock_write,
         mock_rec,
-        mock_getpeers,
         mock_getfwds,
     ):
         from autotune.fee_manager import FeeManager

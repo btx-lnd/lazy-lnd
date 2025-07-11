@@ -188,7 +188,7 @@ def rule_f2_tap_surge_boost(ctx: Context):
         and ctx.ema_delta > ctx.ema_blended * 0.05
         and ctx.fee == 0
     ):
-        channel_inbound_fee = ctx.policy.channels[ctx.alias].get("inbound_fee_ppm", 0)
+        channel_inbound_fee = ctx.policy.channels.get(ctx.alias, {}).get("inbound_fee_ppm", 0)
         inbound_fee = min(ctx.inbound_fee, channel_inbound_fee)
         return RuleResult("F2_tap_surge_boost", 0, 1, 85, inbound_fee=ctx.inbound_fee)
 

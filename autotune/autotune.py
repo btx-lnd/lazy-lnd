@@ -45,10 +45,6 @@ def get_forwarding_events(lnd_container, fetch_interval_secs):
     return run_command(cmd_day), run_command(cmd_interval)
 
 
-def get_peers(node_name):
-    return run_command(f"bos peers --node {node_name} --no-color")
-
-
 def get_dynamic_delta_threshold(section, thresholds):
     """
     Dynamically compute the fee delta threshold for triggering a fee bump.
@@ -317,32 +313,16 @@ def get_adaptive_alpha(section, alpha):
     return (alpha["balanced_1d"], alpha["balanced_5d"], alpha["balanced_7d"])
 
 
-def get_htlc_sizes(section, alias, raw_peers, reserve_deduction, htlc_min_capacity):
-    outbound = 0
-    percentage_outbound = 0.5
-    max_htlc = 0
-    skip_outbound_fee_adjust = False
-    skip_inbound_fee_adjust = False
-    for line in raw_peers.splitlines():
-        if alias.lower() in line.lower():
-            parts = line.split("│")
-            if len(parts) >= 5:
-                try:
-                    outbound = float(parts[4].strip()) * 1e8
-                    inbound = float(parts[2].strip()) * 1e8
-                    capacity = outbound + inbound
-                    percentage_outbound = outbound / (outbound + inbound)
-                    if percentage_outbound < htlc_min_capacity:
-                        skip_outbound_fee_adjust = True
-                    if 1 - percentage_outbound < htlc_min_capacity:
-                        skip_inbound_fee_adjust = True
-                    reserve = int(capacity * 1000 * reserve_deduction)
+def get_htlc_sizes(section, alias, reserve_deduction, htlc_min_capacity):
 
-                    max_htlc = max(0, int(outbound * 1000) - reserve)
-
-                except Exception as err:
-                    pass
-    section["percentage_outbound"] = percentage_outbound
+    skip_outbound_fee_adjust = section.get("peer_outbound_percent", 0) < htlc_min_capacity
+    skip_inbound_fee_adjust = (1 - section.get("peer_outbound_percent", 0)) < htlc_min_capacity
+    
+    reserve = int(section.get("peer_total_capacity", 0) * 1000 * reserve_deduction)
+    outbound = int(section.get("peer_total_local", 0) * 1000)
+    
+    max_htlc = max(0, outbound - reserve)
+    
     section["max_htlc_msat"] = max_htlc
     return section, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust
 
@@ -608,7 +588,7 @@ def adjust_channel_fees(
     outbound_updated = False
     inbound_updated = False
     fee_bump_applied = False
-    percentage_outbound = section.get("percentage_outbound", 0.5)
+    percentage_outbound = section.get("peer_outbound_percent", 0.5)
     rule_ids = []
     # -- Core fee adjustment logic --
     final_report_logs.append(
@@ -873,7 +853,6 @@ def recommend_and_update_fees(
     now,
     observe_only,
     dry_run,
-    raw_peers,
     final_report_logs,
     rule_stats,
     forward_data_day,
@@ -930,7 +909,7 @@ def recommend_and_update_fees(
 
     # 3. HTLC & fee logic
     state, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust = get_htlc_sizes(
-        state, alias, raw_peers, policy.htlc.reserve_deduction, policy.htlc.min_capacity
+        state, alias, policy.htlc.reserve_deduction, policy.htlc.min_capacity
     )
 
     state, final_report_logs, old_fees, new_fees, rule_ids = adjust_channel_fees(

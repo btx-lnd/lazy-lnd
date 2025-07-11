@@ -14,13 +14,6 @@ RUN apt-get update && apt-get install -y \
 # --- Install Docker CLI ---
 RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-24.0.7.tgz | tar xz -C /usr/local/bin --strip-components=1 docker/docker
 
-# --- Install Node.js (for bos) ---
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
-
-# --- Install balanceofsatoshis (bos) globally ---
-RUN npm install -g balanceofsatoshis
-
 # --- Create app directories ---
 RUN mkdir -p /app /app/data /app/log /app/config
 

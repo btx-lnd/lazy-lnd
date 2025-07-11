@@ -23,7 +23,6 @@ from autotune.sync_lnd_channels import (
 from autotune.autotune import (
     recommend_and_update_fees,
     get_forwarding_events,
-    get_peers,
 )
 from autotune.process_htlc import group_htlc_events_by_peer, compute_peer_htlc_stats, summarise_peer_events
 from autotune.policy_utils import Policy
@@ -72,7 +71,7 @@ class FeeManager:
         forward_data_day, forward_data_int = get_forwarding_events(
             self.policy.node.lnd_container, self.policy.timing.fetch_interval_secs
         )
-        raw_peers = get_peers(self.policy.node.name)
+ 
         config_lines = (
             open(self.output_path).readlines()
             if os.path.exists(self.output_path)
@@ -113,7 +112,6 @@ class FeeManager:
                 now,
                 ema_observe,
                 dry_run,
-                raw_peers,
                 [],
                 rule_stats,
                 forward_data_day,
