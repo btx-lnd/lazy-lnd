@@ -56,55 +56,55 @@ def base_section(**overrides):
 def test_get_dynamic_delta_threshold_base_value():
     th = DummyThresholds(base_delta=0.2)
     s = base_section()
-    assert get_dynamic_delta_threshold(s, th) == 0.2
+    assert get_dynamic_delta_threshold(s, "alias", th) == 0.2
 
 
 def test_role_flip_bonus_applied():
     th = DummyThresholds()
     s = base_section(days_since_flip=2)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta - th.role_flip_bonus, 4)
 
 
 def test_high_ema_delta_bonus_applied():
     th = DummyThresholds()
     s = base_section(ema_delta=200)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta - th.high_delta_bonus, 4)
 
 
 def test_high_rev_delta_bonus_applied():
     th = DummyThresholds()
     s = base_section(rev_delta=20)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta - th.high_delta_bonus, 4)
 
 
 def test_mid_streak_bonus_applied():
     th = DummyThresholds()
     s = base_section(fee_bump_streak=3)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta - th.mid_streak_bonus, 4)
 
 
 def test_high_streak_bonus_applied():
     th = DummyThresholds()
     s = base_section(fee_bump_streak=6)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta - th.high_streak_bonus, 4)
 
 
 def test_early_streak_penalty_applied():
     th = DummyThresholds()
     s = base_section(fee_bump_streak=1)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta + th.early_streak_penalty, 4)
 
 
 def test_zero_ema_penalty_applied():
     th = DummyThresholds()
     s = base_section(zero_ema_count=2)
-    val = get_dynamic_delta_threshold(s, th)
+    val = get_dynamic_delta_threshold(s, "alias", th)
     assert val == round(th.base_delta + th.zero_ema_penalty, 4)
 
 
@@ -121,7 +121,7 @@ def test_all_bonuses_and_penalties_additive():
         - th.mid_streak_bonus
         + th.zero_ema_penalty
     )
-    assert get_dynamic_delta_threshold(s, th) == round(expected, 4)
+    assert get_dynamic_delta_threshold(s, "alias", th) == round(expected, 4)
 
 
 def test_min_delta_enforced():
@@ -134,11 +134,11 @@ def test_min_delta_enforced():
         zero_ema_count=999,
     )
     # All bonuses penalise base way below min_delta
-    assert get_dynamic_delta_threshold(s, th) == th.min_delta
+    assert get_dynamic_delta_threshold(s, "alias", th) == th.min_delta
 
 
 def test_max_delta_enforced():
     th = DummyThresholds(max_delta=0.25)
     s = base_section()
     th.base_delta = 0.5  # deliberately over max_delta
-    assert get_dynamic_delta_threshold(s, th) == th.max_delta
+    assert get_dynamic_delta_threshold(s, "alias", th) == th.max_delta

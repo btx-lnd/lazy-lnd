@@ -21,7 +21,7 @@ def group_htlc_events_by_peer(htlc_events, peer_memory, direction="outbound"):
             scid = str(chan.get("scid"))
             if scid:
                 scid_to_peer[scid] = (peer_key, node_id)
-    logger.debug(f"Scid to peer: {scid_to_peer}")
+    logger.debug(f"Scid to peer: {scid_to_peer}", extra={'section': peer_key})
     key = "outgoing_channel_id" if direction == "outbound" else "incoming_channel_id"
     result = {}
     if htlc_events:
@@ -37,11 +37,7 @@ def group_htlc_events_by_peer(htlc_events, peer_memory, direction="outbound"):
                 if node_id not in result:
                     result[node_id] = []
                 result[node_id].append(event)
-                logger.debug(f"Event matched: {event}")
-            else:
-                logger.debug(f"Event NOT matched: {event}")
-    logger.info(f"Event map results: {result}")
-
+                
     return result
 
 
@@ -81,6 +77,23 @@ def compute_peer_htlc_stats(htlc_events, now=None, windows=(3600, 86400)):
             remote_fail_rate=remote_fail_rate,
         )
     return results
+
+def update_fail_history(state):
+    """
+    Appends latest fail_rate for each HTLC stats window to rolling history in state.
+    Keeps last 100 by default.
+    """
+    history_limit = 100
+    htlc_stats = state.get("htlc_stats", {})
+    for window, stats in htlc_stats.items():
+        fail_rate = stats.get("fail_rate", 0)
+        key = f"fail_history_{window}"
+        if not isinstance(state.get(key), list):
+            state[key] = []
+        state[key].append(fail_rate)
+        if len(state[key]) > history_limit:
+            state[key] = state[key][-history_limit:]
+    return state
 
 def classify_failure_source(event):
     """

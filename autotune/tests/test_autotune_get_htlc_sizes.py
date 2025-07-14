@@ -27,7 +27,8 @@ def test_get_htlc_sizes(section, alias, reserve_deduction, htlc_min_capacity,
     result_section, outbound, skip_out, skip_in = get_htlc_sizes(
         section.copy(),  # Don't mutate the original between tests
         reserve_deduction,
-        htlc_min_capacity
+        htlc_min_capacity,
+        1
     )
     assert result_section["max_htlc_msat"] == exp_max_htlc
     assert outbound == exp_outbound

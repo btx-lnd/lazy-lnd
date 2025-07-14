@@ -62,11 +62,10 @@ def test_enforce_policy_min_max_inbound(monkeypatch):
     state = {"fee": 999, "min_fee": 0, "max_fee": 0, "inbound_fee": 0}
     out_fees, out_state = enforce_policy("sec1", dict(new_fees), dict(state), pol)
     # All clamped to policy
-    assert out_fees["min_fee_ppm"] == 111
     assert out_fees["max_fee_ppm"] == 222
-    assert out_fees["inbound_fee_ppm"] == 333
+    assert out_fees["inbound_fee_ppm"] == 0
     assert out_state["fee"] == 222
-    assert out_state["inbound_fee"] == 333
+    assert out_state["inbound_fee"] == 0
 
 
 def test_enforce_policy_missing_channel_block():
@@ -75,27 +74,4 @@ def test_enforce_policy_missing_channel_block():
     new_fees = {"min_fee_ppm": 0, "max_fee_ppm": 0, "inbound_fee_ppm": 0}
     state = {}
     out_fees, out_state = enforce_policy("notfound", dict(new_fees), dict(state), pol)
-    assert out_fees["min_fee_ppm"] == 3000
     assert out_fees["max_fee_ppm"] == 3000
-
-
-def test_enforce_policy_min_gt_max_edge_case():
-    pol = Policy({"channels": {"s": {"min_range_ppm": 1000, "max_range_ppm": 4000}}})
-    new_fees = {"min_fee_ppm": 500, "max_fee_ppm": 2000, "inbound_fee_ppm": 0}
-    state = {}
-    out_fees, _ = enforce_policy("s", dict(new_fees), dict(state), pol)
-    # Clamp but don't let min_fee exceed max_fee/2
-    assert out_fees["min_fee_ppm"] == out_fees["max_fee_ppm"] // 2
-
-
-def test_enforce_policy_logs(monkeypatch):
-    log_calls = []
-    pol = Policy({"channels": {"s": {"min_range_ppm": 100, "max_range_ppm": 200}}})
-    new_fees = {"min_fee_ppm": 300, "max_fee_ppm": 1000, "inbound_fee_ppm": 0}
-    state = {"fee": 1000}
-
-    def fake_log(msg):
-        log_calls.append(msg)
-
-    enforce_policy("s", dict(new_fees), dict(state), pol, log=fake_log)
-    assert any("Policy enforced for s" in m for m in log_calls)

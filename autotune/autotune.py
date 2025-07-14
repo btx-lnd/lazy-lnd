@@ -7,6 +7,7 @@ import math
 
 from autotune.rule_engine import Context, evaluate_fee_rules
 from autotune.policy_utils import enforce_policy
+from autotune.calculations import compute_sink_risk_score
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def get_forwarding_events(lnd_container, fetch_interval_secs):
     return run_command(cmd_day), run_command(cmd_interval)
 
 
-def get_dynamic_delta_threshold(section, thresholds):
+def get_dynamic_delta_threshold(section, section_name, thresholds):
     """
     Dynamically compute the fee delta threshold for triggering a fee bump.
     Applies layered business rules for increased/decreased sensitivity,
@@ -69,14 +70,13 @@ def get_dynamic_delta_threshold(section, thresholds):
     zero_ema_count = section.get("zero_ema_count", 0)
 
     base = thresholds.base_delta
-    logger.debug(f"[get_dynamic_delta_threshold] Start: base_delta={base}")
+    logger.debug(f"[get_dynamic_delta_threshold] Start: base_delta={base}", extra={'section': section_name})
 
     # 1. Early after a role flip: lower the threshold for faster response.
     if days_since_flip <= thresholds.role_flip_days:
         base -= thresholds.role_flip_bonus
         logger.debug(
-            f"  Early role flip: days_since_flip={days_since_flip} ≤ {thresholds.role_flip_days}, -role_flip_bonus ({thresholds.role_flip_bonus}), base={base}"
-        )
+            f"Early role flip: days_since_flip={days_since_flip} ≤ {thresholds.role_flip_days}, -role_flip_bonus ({thresholds.role_flip_bonus}), base={base}", extra={'section': section_name})
 
     # 2. Large recent activity: lower threshold for higher sensitivity.
     if (
@@ -85,44 +85,38 @@ def get_dynamic_delta_threshold(section, thresholds):
     ):
         base -= thresholds.high_delta_bonus
         logger.debug(
-            f"  High EMA/revenue delta: ema_delta={last_ema_delta}, rev_delta={last_rev_delta}, -high_delta_bonus ({thresholds.high_delta_bonus}), base={base}"
-        )
+            f"High EMA/revenue delta: ema_delta={last_ema_delta}, rev_delta={last_rev_delta}, -high_delta_bonus ({thresholds.high_delta_bonus}), base={base}", extra={'section': section_name})
 
     # 3. Sustained bump streak: lower threshold more to maintain momentum.
     if thresholds.mid_streak_min <= streak <= thresholds.mid_streak_max:
         base -= thresholds.mid_streak_bonus
         logger.debug(
-            f"  Mid streak: {thresholds.mid_streak_min} ≤ streak={streak} ≤ {thresholds.mid_streak_max}, -mid_streak_bonus ({thresholds.mid_streak_bonus}), base={base}"
-        )
+            f"Mid streak: {thresholds.mid_streak_min} ≤ streak={streak} ≤ {thresholds.mid_streak_max}, -mid_streak_bonus ({thresholds.mid_streak_bonus}), base={base}", extra={'section': section_name})
     if streak >= thresholds.mid_streak_max + 1:
         base -= thresholds.high_streak_bonus
         logger.debug(
-            f"  High streak: streak={streak} ≥ {thresholds.mid_streak_max+1}, -high_streak_bonus ({thresholds.high_streak_bonus}), base={base}"
-        )
+            f"High streak: streak={streak} ≥ {thresholds.mid_streak_max+1}, -high_streak_bonus ({thresholds.high_streak_bonus}), base={base}", extra={'section': section_name})
 
     # 4. Early streaks (incl. zero): increase threshold (less eager to bump).
     if streak <= getattr(thresholds, "early_streak_max", 0) and streak != 0:
         base += getattr(thresholds, "early_streak_penalty", 0)
         logger.debug(
-            f"  Early streak penalty: streak={streak} ≤ {getattr(thresholds, 'early_streak_max', 0)}, +early_streak_penalty ({getattr(thresholds, 'early_streak_penalty', 0)}), base={base}"
-        )
+            f"Early streak penalty: streak={streak} ≤ {getattr(thresholds, 'early_streak_max', 0)}, +early_streak_penalty ({getattr(thresholds, 'early_streak_penalty', 0)}), base={base}", extra={'section': section_name})
 
     # 5. If stuck in zero-EMA (no volume for many cycles): make less sensitive.
     if zero_ema_count >= getattr(thresholds, "zero_ema_count_threshold", 9999):
         base += getattr(thresholds, "zero_ema_penalty", 0)
         logger.debug(
-            f"  Zero EMA penalty: zero_ema_count={zero_ema_count} ≥ {getattr(thresholds, 'zero_ema_count_threshold', 9999)}, +zero_ema_penalty ({getattr(thresholds, 'zero_ema_penalty', 0)}), base={base}"
-        )
+            f"Zero EMA penalty: zero_ema_count={zero_ema_count} ≥ {getattr(thresholds, 'zero_ema_count_threshold', 9999)}, +zero_ema_penalty ({getattr(thresholds, 'zero_ema_penalty', 0)}), base={base}", extra={'section': section_name})
 
     # 6. Enforce [min_delta, max_delta] bounds.
     before_bounds = base
     base = max(thresholds.min_delta, min(thresholds.max_delta, base))
     logger.debug(
-        f"  Clamp: {before_bounds} → [{thresholds.min_delta}, {thresholds.max_delta}] = {base}"
-    )
+        f"Clamp: {before_bounds} → [{thresholds.min_delta}, {thresholds.max_delta}] = {base}", extra={'section': section_name})
 
     base_rounded = round(base, 4)
-    logger.debug(f"[get_dynamic_delta_threshold] Final: {base_rounded}")
+    logger.debug(f"[get_dynamic_delta_threshold] Final: {base_rounded}", extra={'section': section_name})
     return base_rounded
 
 
@@ -148,7 +142,7 @@ def parse_forwarding_data(forward_json, alias_fragment):
     try:
         data = json.loads(forward_json)
     except Exception as e:
-        logger.error(f"Error parsing forwarding history JSON: {e}")
+        logger.error(f"Error parsing forwarding history JSON: {e}", extra={'section': alias_fragment})
         return {
             "total_in_sats": 0,
             "total_out_sats": 0,
@@ -201,7 +195,7 @@ def parse_forwarding_data(forward_json, alias_fragment):
                 peer_stats[peer_out]["in"] += amt_in  # Inbound from this peer
 
         except Exception as e:
-            logger.error(f"Error processing event: {e}")
+            logger.error(f"Error processing event: {e}", extra={'section': alias_fragment})
             continue
 
     return {
@@ -214,47 +208,25 @@ def parse_forwarding_data(forward_json, alias_fragment):
     }
 
 
-def get_existing_fees(lines, section, fees):
-    inside = False
-    min_fee, max_fee = fees.min_ppm, fees.max_ppm
-    for i, line in enumerate(lines):
-        if line.strip().lower() == f"[{section}]":
-            inside = True
-            continue
-        if inside and line.strip().startswith("["):
-            break
-        if inside:
-            if "min_fee_ppm" in line and "delta" not in line:
-                try:
-                    min_fee = int(line.split("=")[1].strip())
-                except:
-                    pass
-            elif "max_fee_ppm" in line:
-                try:
-                    max_fee = int(line.split("=")[1].strip())
-                except:
-                    pass
-    return min_fee, max_fee
-
-
-def classify_peer(total_in_sats, total_out_sats, role_ratio):
+def classify_peer_role(total_in_sats, total_out_sats, role_ratio):
     """
-    Adjust alpha weights dynamically based on role flips.
+    Classify channel as 'sink', 'tap', or 'balanced' based on recent in/out volumes.
 
     Args:
-        state (dict): The current state of the channels.
-        section (str): The section name (channel).
+        total_in_sats (int): Total sats received in the period.
+        total_out_sats (int): Total sats sent in the period.
+        role_ratio (float): Threshold ratio for classifying roles.
 
     Returns:
-        tuple: (alpha_1d, alpha_5d, alpha_7d)
+        str: One of 'sink', 'tap', or 'balanced'
     """
     if total_in_sats > total_out_sats * role_ratio:
-        return "sink"  # Peer receives significantly more sats than it sends
+        return "sink"
     elif total_out_sats > total_in_sats * role_ratio:
-        return "tap"  # Peer sends significantly more sats than it receives
+        return "tap"
     else:
-        return "balanced"  # Peer has roughly equal inbound and outbound flow
-
+        return "balanced"
+ 
 
 def get_adaptive_alpha(section, alpha):
     """
@@ -313,50 +285,22 @@ def get_adaptive_alpha(section, alpha):
     return (alpha["balanced_1d"], alpha["balanced_5d"], alpha["balanced_7d"])
 
 
-def get_htlc_sizes(section, reserve_deduction, htlc_min_capacity):
-
+def get_htlc_sizes(section, reserve_deduction, htlc_min_capacity, auto_htlc_max):
+    capacity = int(section.get("peer_total_capacity", 0) * 1000)
+    reserve = capacity * reserve_deduction
+    
+    outbound = int(section.get("peer_total_local", 0) * 1000)
+ 
     skip_outbound_fee_adjust = section.get("peer_outbound_percent", 0) < htlc_min_capacity
     skip_inbound_fee_adjust = (1 - section.get("peer_outbound_percent", 0)) < htlc_min_capacity
+    if auto_htlc_max:
+        
+        max_htlc = max(0, outbound - reserve)
+    else:
+        max_htlc = capacity - reserve
     
-    reserve = int(section.get("peer_total_capacity", 0) * 1000 * reserve_deduction)
-    outbound = int(section.get("peer_total_local", 0) * 1000)
-    
-    max_htlc = max(0, outbound - reserve)
-    
-    section["max_htlc_msat"] = max_htlc
+    section["max_htlc_msat"] = int(max_htlc)
     return section, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust
-
-
-def compute_sink_risk_score(state_section):
-    """
-    Predicts sink risk based on declining volume, drying revenue,
-    repeated fee bumps, and quiet activity.
-    Returns a score between 0.0 and 1.0.
-    """
-    ema_blended = state_section.get("ema_blended", 0)
-    ema_delta = state_section.get("ema_delta", 0)
-    rev_ema_blended = state_section.get("rev_ema_blended", 0)
-    rev_delta = state_section.get("rev_delta", 0)
-    zero_ema_count = state_section.get("zero_ema_count", 0)
-    fee_bump_streak = state_section.get("fee_bump_streak", 0)
-
-    score = 0.0
-
-    # Looser thresholds
-    if ema_blended > 25_000 and ema_delta < 0:
-        score += 0.4
-    if rev_ema_blended < 100 and rev_delta <= 0:
-        score += 0.3
-    if zero_ema_count >= 1:
-        score += 0.2
-    if fee_bump_streak >= 5:
-        score += 0.1
-    # Add this at the end
-    if score < 0.5:
-        prev_score = state_section.get("sink_risk_score", 0.0)
-        score = max(0.0, prev_score - 0.1)  # decays by 0.1 each run
-
-    return min(1.0, round(score, 2))
 
 
 def calculate_exponential_fee_bump(current_fee, fee_bump_streak, fees):
@@ -431,6 +375,8 @@ def process_channel_data(
     revenue = daily_totals["total_fees"]
 
     ema = section.get("ema_blended", 0)
+    prev_ema_blended = section.get("prev_ema_blended", 0)
+    prev_rev_ema_blended = section.get("prev_rev_ema_blended", 0)
     ema_target = policy.thresholds.sink_ema_target
 
     # How far from target (for F3 rule)
@@ -451,7 +397,7 @@ def process_channel_data(
     vol_int = int_totals["total_out_sats"]
     revenue_int = int_totals["total_fees"]
 
-    role = classify_peer(
+    role = classify_peer_role(
         daily_totals["total_in_sats"],
         daily_totals["total_out_sats"],
         policy.thresholds.role_ratio,
@@ -482,11 +428,14 @@ def process_channel_data(
     # Calculate blended EMAs and deltas
     ema_blended = (ema_1d_new + ema_5d_new + ema_7d_new) / 3
     rev_ema_blended = (revenue_ema_1d_new + revenue_ema_5d_new + revenue_ema_7d_new) / 3
-    ema_delta = int(vol - ema_blended)
-    rev_delta = int(revenue - rev_ema_blended)
+    ema_delta = int(ema_blended - prev_ema_blended)
+    rev_delta = int(rev_ema_blended - prev_rev_ema_blended)
 
+    section["prev_ema_blended"] = section.get("ema_blended", 0)
     section["ema_blended"] = ema_blended
     section["ema_delta"] = ema_delta
+    
+    section["prev_rev_ema_blended"] = section.get("rev_ema_blended", 0)
     section["rev_ema_blended"] = rev_ema_blended
     section["rev_delta"] = rev_delta
 
@@ -544,22 +493,29 @@ def adjust_channel_fees(
     revenue_int = channel_data["revenue_int"]
     outbound = channel_data.get("outbound", 0)  # if available
 
+    prev_ema_blended = section.get("prev_ema_blended", 0)
+    prev_rev_ema_blended = section.get("prev_rev_ema_blended", 0)
     ema_blended = section.get("ema_blended", 0)
     ema_delta = section.get("ema_delta", 0)
     rev_ema_blended = section.get("rev_ema_blended", 0)
     rev_delta = section.get("rev_delta", 0)
 
-    min_fee, max_fee = get_existing_fees(lines, section_name, policy.fees)
-    fee = section.get("fee", max_fee)
+    fee = section.get("fee", 2500)
+    inbound_fee = section.get("inbound_fee", 0)
+    
+    max_fee = fee
+    min_fee = int(fee) / 2
 
     if vol_int > 0:
         section["last_successful_fee"] = fee
+        if inbound_fee > 0:
+            section["last_successful_inbound_fee"] = inbound_fee
     last_successful_fee = section.get("last_successful_fee", -1)
     last_daily_vol = section.get("last_daily_vol", vol)
 
-    new_max = fee
+    new_max = fee 
     new_min = round(new_max * policy.fees.min_max_ratio)
-    inbound_fee = section.get("inbound_fee", 0)
+
     old_fees = {
         "min_fee_ppm": min_fee,
         "max_fee_ppm": max_fee,
@@ -592,30 +548,27 @@ def adjust_channel_fees(
     rule_ids = []
     # -- Core fee adjustment logic --
     final_report_logs.append(
-        f"{section['alias']}: observe: {observe_only}, cooldown: {cooldown}, skip_outbound/inbound_fee_adjust: {skip_outbound_fee_adjust}/{skip_inbound_fee_adjust}"
+        f"[{section['alias']}]: observe: {observe_only}, cooldown: {cooldown}, skip_outbound/inbound_fee_adjust: {skip_outbound_fee_adjust}/{skip_inbound_fee_adjust}"
     )
-    if not observe_only and not cooldown:
-        if failed_htlc_count >= policy.htlc.failed_htlc_threshold:
-            new_max, new_min, bump_amount = calculate_exponential_fee_bump(
-                max_fee, fee_bump_streak, policy.fees
-            )
-            section["htlc_fail_count"] = 0
-            if final_report_logs is not None:
-                final_report_logs.append(
-                    f"Failed HTLC count {failed_htlc_count} triggered fee bump for {section}"
-                )
-        else:
+    if not observe_only:
+        if True == False:
+            pass
+        else:  
             # ------------------------------------------------------------------
             # Modular rule engine (replaces legacy A-H ladder)
             # ------------------------------------------------------------------
-            delta_threshold = get_dynamic_delta_threshold(section, policy.thresholds)
+            delta_threshold = get_dynamic_delta_threshold(section, section_name, policy.thresholds)
             ctx = Context(
                 alias=section.get("alias"),
                 vol=vol,
                 vol_int=vol_int,
                 revenue=revenue,
+                peer_mem=section,
+                channel_data=channel_data,
+                prev_ema_blended=prev_ema_blended,
                 ema_blended=ema_blended,
                 ema_delta=ema_delta,
+                prev_rev_ema_blended=prev_rev_ema_blended,
                 rev_ema_blended=rev_ema_blended,
                 rev_delta=rev_delta,
                 last_daily_vol=last_daily_vol,
@@ -623,6 +576,8 @@ def adjust_channel_fees(
                 min_fee=min_fee,
                 max_fee=max_fee,
                 inbound_fee=inbound_fee,
+                last_successful_fee=last_successful_fee,
+                htlc_stats=section["htlc_stats"],
                 fee_bump_streak=fee_bump_streak,
                 zero_ema_count=zero_ema_count,
                 role=section.get("role_override") or section.get("role", "undefined"),
@@ -648,12 +603,12 @@ def adjust_channel_fees(
             rule_stats = rule_stats or {}
 
             # === Outbound Fee Application ===
-
-            if best_outbound and not skip_outbound_fee_adjust:
-                outbound_rule_id, new_min, new_max, _ = best_outbound
+            if best_outbound and ((not skip_outbound_fee_adjust) or best_outbound.cooldown_override):
+                outbound_rule_id, new_min, new_max, weight, cooldown_override = best_outbound
                 rule_ids.append(outbound_rule_id)
-                if getattr(best_outbound, "override_cooldown", False):
+                if best_outbound.cooldown_override:
                     cooldown = False
+                    cooldown_override = True
 
                 if outbound_rule_id not in rule_stats:
                     rule_stats[outbound_rule_id] = {
@@ -664,18 +619,16 @@ def adjust_channel_fees(
                 rule_stats[outbound_rule_id]["applied"] += 1
 
                 final_report_logs.append(
-                    f"{section['alias']}: Fee change to {new_min}/{new_max} via {outbound_rule_id}"
+                    f"[{section['alias']}]: Fee change to {new_min}/{new_max} via {outbound_rule_id}"
                 )
                 outbound_updated = True
                 if outbound_rule_id == "F3_ema_sink_guard":
                     final_report_logs.append(
-                        f"{section}['alias']: Sink protection triggered. "
+                        f"[{section['alias']}]: Sink protection triggered. "
                         f"Ratio={section['sink_ratio']:.2f}, "
                         f"Δ={section['sink_delta']:.2f}, "
                         f"EMA gap={section['ema_from']}"
                     )
-                    cooldown_override = True
-                    cooldown = False
             else:
                 new_min, new_max = min_fee, max_fee
 
@@ -683,11 +636,14 @@ def adjust_channel_fees(
             if (
                 best_inbound
                 and hasattr(best_inbound, "inbound_fee")
-                and not skip_inbound_fee_adjust
+                and ((not skip_inbound_fee_adjust) or best_inbound.cooldown_override)
             ):
                 new_inbound_fee = best_inbound.inbound_fee
                 inbound_rule_id = best_inbound.rule_id
                 rule_ids.append(inbound_rule_id)
+                if best_inbound.cooldown_override:
+                    cooldown = False
+                    cooldown_override = True
 
                 if inbound_rule_id not in rule_stats:
                     rule_stats[inbound_rule_id] = {
@@ -698,7 +654,7 @@ def adjust_channel_fees(
                 rule_stats[inbound_rule_id]["applied"] += 1
                 inbound_updated = True
                 final_report_logs.append(
-                    f"{section['alias']}: Inbound fee set to {new_inbound_fee}ppm via {inbound_rule_id}"
+                    f"[{section['alias']}]: Inbound fee set to {new_inbound_fee}ppm via {inbound_rule_id}"
                 )
 
             # === Fee bump flag
@@ -716,7 +672,7 @@ def adjust_channel_fees(
     # -- catch negative fees --
     if new_max < 0 or new_min < 0:
         final_report_logs.append(
-            f"ERROR: {section['alias']}: Fee was negative {new_min}/{new_max}. Reset to 0."
+            f"ERROR: [{section['alias']}]: Fee was negative {new_min}/{new_max}. Reset to 0."
         )
         new_max = 0
         new_min = 0
@@ -730,19 +686,19 @@ def adjust_channel_fees(
     ):
         if cooldown_override:
             final_report_logs.append(
-                f"{section['alias']}: Fee bump to {new_min}/{new_max} NOT skipped. Cooldown override: {cooldown_override}"
+                f"[{section['alias']}]: Fee bump to {new_min}/{new_max} NOT skipped. Cooldown override: {cooldown_override}"
             )
             outbound_updated = True
         else:
             final_report_logs.append(
-                f"{section['alias']}: Fee bump to {new_min}/{new_max} skipped. In failed cooldown period"
+                f"[{section['alias']}]: Fee bump to {new_min}/{new_max} skipped. In failed cooldown period"
             )
             fail_cooldown = True
     if (new_min != min_fee or new_max != max_fee) and not fail_cooldown:
-        final_report_logs.append(f"{section['alias']}: Fee change will apply")
+        final_report_logs.append(f"[{section['alias']}]: Fee change will apply")
         outbound_updated = True
         # -- Fee streak and raise/lower tracking --
-    if not observe_only and not cooldown and not skip_outbound_fee_adjust:
+    if not observe_only and ((not cooldown and not skip_outbound_fee_adjust) or cooldown_override):
         if (
             not fee_bump_applied
             and bump_time
@@ -752,18 +708,18 @@ def adjust_channel_fees(
             section["fee_increase_failed_at"] = now.isoformat()
             section["fee_bump_streak"] = 0
             final_report_logs.append(
-                f"{section['alias']}: Fee bump reset and bump attempt mark failed"
+                f"[{section['alias']}]: Fee bump reset and bump attempt mark failed"
             )
         elif (
             not fee_bump_applied and not cooldown and new_max == max_fee
         ) or fail_cooldown:
             section["fee_bump_streak"] = 0
-            final_report_logs.append(f"{section['alias']}: Fee bump reset")
+            final_report_logs.append(f"[{section['alias']}]: Fee bump reset")
         elif fee_bump_applied:
             section["fee_bump_attempted_at"] = (now - timedelta(minutes=1)).isoformat()
             section["fee_bump_streak"] = fee_bump_streak + 1
             final_report_logs.append(
-                f"{section['alias']}: Fee bump increased to {section['fee_bump_streak']}"
+                f"[{section['alias']}]: Fee bump increased to {section['fee_bump_streak']}"
             )
 
     # -- State and logging updates --
@@ -800,9 +756,6 @@ def adjust_channel_fees(
         )
         section["inbound_fee"] = new_inbound_fee
 
-    if failed_htlc_count < policy.htlc.failed_htlc_threshold:
-        section["htlc_fail_count"] = failed_htlc_count
-
     if ema_blended <= 1000:
         if "zero_ema_count" in section:
             section["zero_ema_count"] += 1
@@ -816,7 +769,6 @@ def adjust_channel_fees(
 
     # These are safe in observe_only too
     section["last_daily_vol"] = vol
-    section["prev_ema_blended"] = ema_blended
     section["ema_1d"] = ema_1d_new
     section["ema_5d"] = ema_5d_new
     section["ema_7d"] = ema_7d_new
@@ -836,146 +788,152 @@ def adjust_channel_fees(
         role_effective += "*"
     now_str = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
     logger.info(
-        f"{now_str} [{section['alias']}] fwd={vol} emaΔ={ema_delta:+} ema={int(ema_1d)}→{int(ema_blended)} "
+        f"fwd={vol} emaΔ={ema_delta:+} ema={int(ema_1d)}→{int(ema_blended)} "
         f"fee={max_fee}->{new_max} in={new_inbound_fee} rev={revenue} role={role_effective} sink={sink_risk_score:.2f}  sink ratio={section['sink_ratio']:.2f} "
-        f"sinkΔ={section['sink_delta']:.2f} ema gap={section['ema_from']}"
+        f"sinkΔ={section['sink_delta']:.2f} ema gap={section['ema_from']}", extra={'section': section['alias']}
     )
 
     return section, final_report_logs, old_fees, new_fees, rule_ids
 
 
 def recommend_and_update_fees(
-    section_name,
-    alias,
-    policy,
-    peer_mem,
-    lines,
-    now,
-    observe_only,
-    dry_run,
-    final_report_logs,
-    rule_stats,
-    forward_data_day,
-    forward_data_int,
-):
-    """
-    Core per-peer pipeline. Run your fee/EMA/role/logic/rules.
-    Returns:
-      - rec: dict (min_fee_ppm, max_fee_ppm, inbound_fee_ppm)
-      - updated_state: dict (persistable per-peer state)
-      - logs: list of NDJSON event log lines
-    """
-    # 1. Prepare state for this peer
-    state = peer_mem.get(section_name, {}).copy()
-    state["alias"] = alias
-
-    # 2. Metrics and role state
-    channel_data, state = process_channel_data(
-        state, alias, forward_data_day, forward_data_int, policy
-    )
-    state["sink_risk_score"] = compute_sink_risk_score(state)
-    sink_score = state["sink_risk_score"]
-
-    # --- Debounced Role Override Logic ---
-    override = state.get("role_override")
-    neutral_count = state.get("neutral_sink_score_count", 0)
-    sink_count = state.get("sink_score_high_count", 0)
-    tap_count = state.get("sink_score_low_count", 0)
-
-    if sink_score >= 0.8:
-        sink_count += 1
-        tap_count = 0
-        neutral_count = 0
-    elif sink_score <= 0.2:
-        tap_count += 1
-        sink_count = 0
-        neutral_count = 0
-    else:
-        neutral_count += 1
-        sink_count = 0
-        tap_count = 0
-
-    if sink_count >= 3:
-        state["role_override"] = "sink"
-    elif tap_count >= 3:
-        state["role_override"] = "tap"
-    elif neutral_count >= 3 and override:
-        del state["role_override"]
-
-    state["sink_score_high_count"] = sink_count
-    state["sink_score_low_count"] = tap_count
-    state["neutral_sink_score_count"] = neutral_count
-    # --------------------------------------
-
-    # 3. HTLC & fee logic
-    state, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust = get_htlc_sizes(
-        state, policy.htlc.reserve_deduction, policy.htlc.min_capacity
-    )
-
-    state, final_report_logs, old_fees, new_fees, rule_ids = adjust_channel_fees(
-        state,
         section_name,
-        channel_data,
+        alias,
+        policy,
+        peer_mem,
         lines,
         now,
         observe_only,
         dry_run,
-        skip_outbound_fee_adjust,
-        skip_inbound_fee_adjust,
         final_report_logs,
         rule_stats,
-        policy,
-    )
-    new_fees, state = enforce_policy(
-        section_name,
-        new_fees,
-        state,
-        policy,
-        log=lambda msg: final_report_logs.append(msg),
-    )
+        forward_data_day,
+        forward_data_int,
+    ):
+        """
+        Core per-peer pipeline. Run your fee/EMA/role/logic/rules.
+        Returns:
+          - rec: dict (min_fee_ppm, max_fee_ppm, inbound_fee_ppm)
+          - updated_state: dict (persistable per-peer state)
+          - logs: list of NDJSON event log lines
+        """
+        # 1. Prepare state for this peer
+        state = peer_mem.get(section_name, {}).copy()
+        state["alias"] = alias
 
-    # 4. Logging/events for this peer
-    logs = []
-    if rule_ids:
-        change_event = {
-            "ts": now.isoformat(),
-            "chan": alias,
-            "rules": rule_ids,
-            "old_fees": old_fees,
-            "new_fees": new_fees,
-            "vol_before": channel_data["vol"],
-            "rev_before": channel_data["revenue"],
-            "outbound_action": (
-                "lower"
-                if new_fees["max_fee_ppm"] < old_fees["max_fee_ppm"]
-                else (
-                    "raise"
-                    if new_fees["max_fee_ppm"] > old_fees["max_fee_ppm"]
-                    else "same"
-                )
-            ),
-            "inbound_action": (
-                "lower"
-                if new_fees["inbound_fee_ppm"] < old_fees["inbound_fee_ppm"]
-                else (
-                    "raise"
-                    if new_fees["inbound_fee_ppm"] > old_fees["inbound_fee_ppm"]
-                    else "same"
-                )
-            ),
+        # 2. Metrics and role state
+        channel_data, state = process_channel_data(
+            state, alias, forward_data_day, forward_data_int, policy
+        )
+        state["sink_risk_score"] = compute_sink_risk_score(state)
+        sink_score = state["sink_risk_score"]
+
+        # --- Debounced Role Override Logic ---
+        override = state.get("role_override")
+        neutral_count = state.get("neutral_sink_score_count", 0)
+        sink_count = state.get("sink_score_high_count", 0)
+        tap_count = state.get("sink_score_low_count", 0)
+
+        if sink_score >= 0.8:
+            sink_count += 1
+            tap_count = 0
+            neutral_count = 0
+        elif sink_score <= 0.2:
+            tap_count += 1
+            sink_count = 0
+            neutral_count = 0
+        else:
+            neutral_count += 1
+            sink_count = 0
+            tap_count = 0
+
+        if sink_count >= 3:
+            state["role_override"] = "sink"
+        elif tap_count >= 3:
+            state["role_override"] = "tap"
+        elif neutral_count >= 3 and override:
+            del state["role_override"]
+
+        state["sink_score_high_count"] = sink_count
+        state["sink_score_low_count"] = tap_count
+        state["neutral_sink_score_count"] = neutral_count
+        # --------------------------------------
+
+        # 3. HTLC & fee logic
+        state, outbound, skip_outbound_fee_adjust, skip_inbound_fee_adjust = get_htlc_sizes(
+            state, policy.htlc.reserve_deduction, policy.htlc.min_capacity, policy.features.auto_htlc_max
+        )
+
+        state, final_report_logs, old_fees, new_fees, rule_ids = adjust_channel_fees(
+            state,
+            section_name,
+            channel_data,
+            lines,
+            now,
+            observe_only,
+            dry_run,
+            skip_outbound_fee_adjust,
+            skip_inbound_fee_adjust,
+            final_report_logs,
+            rule_stats,
+            policy,
+        )
+        new_fees, state = enforce_policy(
+            section_name,
+            new_fees,
+            state,
+            policy,
+            log=lambda msg: final_report_logs.append(msg),
+        )
+
+        # 4. Logging/events for this peer
+        logs = []
+        if rule_ids:
+            change_event = {
+                "ts": now.isoformat(),
+                "chan": alias,
+                "rules": rule_ids,
+                "old_fees": old_fees,
+                "new_fees": new_fees,
+                "vol_before": channel_data["vol"],
+                "rev_before": channel_data["revenue"],
+                "outbound_action": (
+                    "lower"
+                    if new_fees["max_fee_ppm"] < old_fees["max_fee_ppm"]
+                    else (
+                        "raise"
+                        if new_fees["max_fee_ppm"] > old_fees["max_fee_ppm"]
+                        else "same"
+                    )
+                ),
+                "inbound_action": (
+                    "lower"
+                    if new_fees["inbound_fee_ppm"] < old_fees["inbound_fee_ppm"]
+                    else (
+                        "raise"
+                        if new_fees["inbound_fee_ppm"] > old_fees["inbound_fee_ppm"]
+                        else "same"
+                    )
+                ),
+            }
+            log_file_handle = open(policy.paths.fee_log_file, "a")
+            json.dump(change_event, log_file_handle)
+            log_file_handle.write("\n")
+            log_file_handle.close()
+        logs.extend(final_report_logs)  # Optionally add more logs as needed
+
+        # 5. TOML config for this channel
+        rec = {
+            "fee_ppm": new_fees["max_fee_ppm"],
+            "inbound_fee_ppm": new_fees["inbound_fee_ppm"],
+            "max_htlc_msat": state.get("max_htlc_msat", 500_000),
         }
-        log_file_handle = open(policy.paths.fee_log_file, "a")
-        json.dump(change_event, log_file_handle)
-        log_file_handle.write("\n")
-        log_file_handle.close()
-    logs.extend(final_report_logs)  # Optionally add more logs as needed
 
-    # 5. TOML config for this channel
-    rec = {
-        "min_fee_ppm": new_fees["min_fee_ppm"],
-        "max_fee_ppm": new_fees["max_fee_ppm"],
-        "inbound_fee_ppm": new_fees["inbound_fee_ppm"],
-        "max_htlc_msat": state.get("max_htlc_msat", 500_000),
-    }
-
-    return rec, state, logs
+        return rec, state, logs
+    
+    
+    
+    
+    
+    
+    

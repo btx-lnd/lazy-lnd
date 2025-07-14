@@ -61,6 +61,9 @@ def mock_policy_with_minimal_required_keys(**overrides):
             "zero_ema_trigger": 1,
             "fee_bump_streak_threshold": 3,
         },
+        "features": {
+            "auto_htlc_max": 1,
+        },
         "htlc": {
             "ratio": 0.9,
             "reserve_deduction": 0.0101,
