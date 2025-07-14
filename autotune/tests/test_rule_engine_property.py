@@ -1,5 +1,6 @@
 # autotune/tests/test_rule_engine_property.py
 
+import string
 import pytest
 import tomli
 from hypothesis import given, settings, strategies as st
@@ -18,7 +19,7 @@ def context_strategy(draw):
     with open("autotune/params.toml", "rb") as f:
         new_policy = Policy(tomli.load(f))
     return rule_engine.Context(
-        alias=draw(st.text(min_size=1, max_size=16)),
+        alias = draw(st.text(min_size=1, max_size=16, alphabet=string.ascii_letters)),
         vol=draw(st.integers(min_value=0, max_value=10_000_000)),
         vol_int=draw(st.integers(min_value=0, max_value=10_000_000)),
         revenue=draw(st.integers(min_value=0, max_value=1_000_000)),

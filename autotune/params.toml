@@ -11,6 +11,9 @@ log_file = "/app/log/fee_adjust.log"
 fee_log_file = "/app/log/fee_changes.ndjson"
 peer_mem = "/app/data/peer_memory.json"
 
+[features]
+auto_htlc_max = 1
+
 [ema]
 # EMA smoothing factors for traffic/revenue
 # - alpha_balanced_1d/5d/7d: Increase for faster response, decrease for steadier/smoother
@@ -30,7 +33,7 @@ alpha_weighted_7d = 0.03
 # - min_max_ratio: Minimum allowed ratio for min_fee to max_fee
 # - failed_htlc_bump: Extra bump if HTLC fails
 increment_ppm = 25
-min_ppm = 1
+min_ppm = 0
 max_ppm = 2500
 bump_max = 250
 min_max_ratio = 0.5
@@ -45,7 +48,9 @@ failed_htlc_bump = 25
 ratio = 0.9
 reserve_deduction = 0.0101
 min_capacity = 0.05
-failed_htlc_threshold = 3
+fail_short_term = 0.4
+fail_short_term_threshold = 25
+fail_long_term = 0.3
 
 [timing]
 # Time and backoff controls
@@ -53,7 +58,7 @@ failed_htlc_threshold = 3
 # - fee_backoff_hours: Wait after a failed fee bump
 # - failed_bump_flag_hours: How long to mark as failed/cooldown
 # - fetch_interval_secs: How often to run autotune (lower = more frequent)
-cooldown_hours = 4
+cooldown_hours = 1
 fee_backoff_hours = 24
 failed_bump_flag_hours = 6
 fetch_interval_secs = 1800
@@ -107,12 +112,12 @@ htlc_forward_failures_hold = 900
 # - weighted_*: Used after role flip
 # - fee_bump_*: If many bumps, slow down adaptation
 # - zero_ema_*: If stuck, increase adaptation
-balanced_1d = 0.15
-balanced_5d = 0.10
-balanced_7d = 0.07
-weighted_1d = 0.4
-weighted_5d = 0.05
-weighted_7d = 0.03
+balanced_1d = 0.60
+balanced_5d = 0.25
+balanced_7d = 0.15
+weighted_1d = 0.75
+weighted_5d = 0.15
+weighted_7d = 0.10
 role_flip_days = 3
 min_role_flips = 2
 zero_ema_trigger = 3
@@ -134,27 +139,86 @@ fee_bump_min_7d = 0.01
 # Peer-specific fee/inbound guard lists
 # - exempt_from_sink_guard: Aliases never hit by sink-guard
 # - inbound_fee_targets: Aliases allowed for inbound fee logic
-exempt_from_sink_guard = []
-inbound_fee_targets = []
+sink_guard_disabled = []
+inbound_fees_disabled = []
 
 [inbound_fees]
 # Inbound fee range for adaptive rules
 # - min_fee_ppm: Smallest inbound fee rule can set
 # - max_fee_ppm: Largest inbound fee allowed
-min_fee_ppm = 25
-max_fee_ppm = 3500
+increment_ppm = 25
+min_fee_ppm = -1000
+max_fee_ppm = 2500
+tap_pct = 0.3
+sink_pct = 0.7
+max_htlc_inbound_fail_rate = 0.2
 
 
 # Per-channel fee range overrides (never go outside these)
 # - peer: Alias for logs, display, matching
 # - node_id: Peer node pubkey
 # 
-# Below are optional per channel
+# Below are optional
 # - min_range_ppm: Hard lower bound
 # - max_range_ppm: Hard upper bound
 # - inbound_fee_ppm: Minimum positive inbound fee
+
+[channels.lightningcoins]
+peer = "lightningcoins"
+node_id = "03bd6d28432d67effa2b2b89dd5fd68697940e8a8f2fbb84aaae90d584295b03bf"
 
 [channels.acinq]
 peer = "acinq"
 node_id = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
 min_range_ppm = 750
+
+[channels.kraken]
+peer = "kraken"
+node_id = "02f1a8c87607f415c8f22c00593002775941dea48869ce23096af27b0cfdcc0b69"
+min_range_ppm = 750
+max_range_ppm = 750
+
+[channels.nodemcnodyface]
+peer = "nodemcnodyface"
+node_id = "03d9231f97a1dccd822ffc58226e9c7f2bec9dac00df4c0ff6c73b3d3f6c6ef6ea"
+min_inbound_fee_ppm = 0
+
+[channels.node_boat]
+peer = "node on the boat"
+node_id = "02103f1826be6287c8430e653de06ef16d94b3106c01937a78f5ae2c89bd40f234"
+
+[channels.centralwank]
+peer = "centralwank"
+node_id = "03b8d3617af7a3b525f2ca3cad9d08cae6ff7519a19c9cf3236b3b4e2f092087f4"
+max_range_ppm = 150
+
+[channels.crazy]
+peer = "crazy"
+node_id = "0364d6ff27ee48dd409e088e6b57abbde6623de80113ff29cb19d6169688fa318d"
+max_range_ppm = 50
+
+[channels.edelweiss]
+peer = "edelweiss"
+node_id = "027831fdda22a3fdb95ac7f4a6348467720ba073edb61317c7bc965315c9e5bbe1"
+
+[channels.jayhawkpleb]
+peer = "jayhawkpleb"
+node_id = "0230e8b298bef620df9640c7a956106f905dbc48d5cedadd5837f3a22a9cdced28"
+
+[channels.1sats]
+peer = "1sats"
+node_id = "02e4971e61a3f55718ae31e2eed19aaf2e32caf3eb5ef5ff03e01aa3ada8907e78"
+min_range_ppm = 1200
+
+[channels.boltz]
+peer = "boltz"
+node_id = "02d96eadea3d780104449aca5c93461ce67c1564e2e1d73225fa67dd3b997a6018"
+min_range_ppm = 650
+
+[channels.authenticity]
+peer = "authenticity"
+node_id = "026f46207fd290a33cbd86e29b3ad0a47cdd44ab9aa5267cde66483e10aa9d3180"
+
+[channels.masteryoda]
+peer = "masteryoda"
+node_id = "033dee9c6a0afc40ffd8f27d68ef260f3e5e1c19e59c6f9bb607fb04c1d497a809"

@@ -23,10 +23,18 @@ from autotune.sync_lnd_channels import (
 from autotune.autotune import (
     recommend_and_update_fees,
     get_forwarding_events,
-    get_peers,
 )
-from autotune.process_htlc import group_htlc_events_by_peer, compute_peer_htlc_stats, summarise_peer_events
+from autotune.process_htlc import group_htlc_events_by_peer, compute_peer_htlc_stats, update_fail_history, summarise_peer_events
 from autotune.policy_utils import Policy
+from autotune.calculations import update_all_rolling_stats
+
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s [%(section)s]: %(message)s"
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.DEBUG,
+    format=LOG_FORMAT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +74,13 @@ class FeeManager:
         Returns recommendations dict and logs.
         """
         self.load()
-        logger.info(f"Incoming events: {htlc_events}")
+        logger.info(f"Incoming events: {htlc_events}", extra={'section': 'main'})
 
         # Get channel metrics and forwarding data
         forward_data_day, forward_data_int = get_forwarding_events(
             self.policy.node.lnd_container, self.policy.timing.fetch_interval_secs
         )
-        raw_peers = get_peers(self.policy.node.name)
+ 
         config_lines = (
             open(self.output_path).readlines()
             if os.path.exists(self.output_path)
@@ -100,10 +108,12 @@ class FeeManager:
             peer_htlc_events = processed_htlc_events.get(node_id, [])
             self.peer_mem[section]["htlc_stats"] = compute_peer_htlc_stats(peer_htlc_events, now=now)
             
-            logger.debug(f"{section} HTLC Stats: {self.peer_mem[section]['htlc_stats']}")
+            logger.debug(f"HTLC Stats: {self.peer_mem[section]['htlc_stats']}", extra={'section': alias})
 
-            missed_summaries.append(f"{alias}: HTLC Stats: {self.peer_mem[section]['htlc_stats']}")
-
+            missed_summaries.append(f"[{alias}] HTLC Stats: {self.peer_mem[section]['htlc_stats']}")
+            
+            self.peer_mem[section] = update_all_rolling_stats(self.peer_mem[section])
+            
             rec, state, logs = recommend_and_update_fees(
                 section,
                 alias,
@@ -113,7 +123,6 @@ class FeeManager:
                 now,
                 ema_observe,
                 dry_run,
-                raw_peers,
                 [],
                 rule_stats,
                 forward_data_day,
@@ -127,23 +136,23 @@ class FeeManager:
 
         # Optionally write TOML and state
         if apply_changes and not dry_run and not ema_observe:
-            logger.info("Writing new config...")
+            logger.info("Writing new config...", extra={'section': 'main'})
             write_charge_lnd_toml(recommendations, self.output_path, self.channels)
-            logger.info("Saving peer memory...")
+            logger.info("Saving peer memory...", extra={'section': 'main'})
             save_peer_memory(self.peer_mem, self.peer_mem_path)
         else:
             # Always save peer memory even if dry-run or EMA observe
-            logger.info("Saving peer memory only...")
+            logger.info("Saving peer memory only...", extra={'section': 'main'})
             save_peer_memory(self.peer_mem, self.peer_mem_path)
 
         if verbose:
-            logger.debug("---- Fee Update Logs ----")
+            logger.debug("---- Fee Update Logs ----", extra={'section': 'main'})
             for entry in final_report_logs:
-                logger.debug(entry)
-            logger.info("---- Fee Recommendations ----")
+                logger.debug(entry, extra={'section': 'main'})
+            logger.info("---- Fee Recommendations ----", extra={'section': 'main'})
             for section, vals in recommendations.items():
-                logger.info(f"{section}: {vals}")
-            logger.info("-------------------------")
+                logger.info(f"{vals}", extra={'section': section})
+            logger.info("-------------------------", extra={'section': 'main'})
 
         return recommendations, final_report_logs
 
@@ -153,12 +162,12 @@ class FeeManager:
         """
         self.load()
         if section_name not in self.peer_mem:
-            logger.info(f"No peer memory for {section_name}")
+            logger.info(f"No peer memory", extra={'section': section_name})
             return
         state = self.peer_mem[section_name]
-        logger.info(f"Peer: {section_name}")
+        logger.info(f"Peer: {section_name}", extra={'section': section_name})
         for k, v in state.items():
-            logger.info(f"  {k}: {v}")
+            logger.info(f"  {k}: {v}", extra={'section': section_name})
 
     def view_state(self):
         """
@@ -167,24 +176,24 @@ class FeeManager:
         self.load()
         logger.info("Peer memory:")
         for peer, state in self.peer_mem.items():
-            logger.info(f"{peer}: {state}")
+            logger.info(f"{state}", extra={'section': peer})
 
 
 def health_check(config_path, peer_mem_path, toml_out_path):
     try:
         # Check config TOML exists and loads
         if not os.path.exists(config_path):
-            logger.error(f"FAIL: Config not found: {config_path}")
+            logger.error(f"FAIL: Config not found: {config_path}", extra={'section': 'main'})
             return 2
         config = load_policy_config(config_path)
         if not isinstance(config, Policy) or not config.get("channels"):
-            logger.error("FAIL: Config invalid or missing 'channels'")
+            logger.error("FAIL: Config invalid or missing 'channels'", extra={'section': 'main'})
             return 2
 
         # Check peer memory loads (and is a dict)
         peer_mem = load_peer_memory(peer_mem_path)
         if not isinstance(peer_mem, dict):
-            logger.error("FAIL: Peer memory is not a dict")
+            logger.error("FAIL: Peer memory is not a dict", extra={'section': 'main'})
             return 3
 
         # Check output path is writeable (touch, then delete)
@@ -192,14 +201,14 @@ def health_check(config_path, peer_mem_path, toml_out_path):
             with open(toml_out_path, "a") as f:
                 f.write("")  # touch file
         except Exception as e:
-            logger.error(f"FAIL: Cannot write to output TOML: {toml_out_path} - {e}")
+            logger.error(f"FAIL: Cannot write to output TOML: {toml_out_path} - {e}", extra={'section': 'main'})
             return 4
 
-        logger.info("OK: Fee manager config, state and output path healthy")
+        logger.info("OK: Fee manager config, state and output path healthy", extra={'section': 'main'})
         return 0
 
     except Exception as e:
-        logger.exception(f"FAIL: Health check exception: {e}")
+        logger.exception(f"FAIL: Health check exception: {e}", extra={'section': 'main'})
         return 5
 
 

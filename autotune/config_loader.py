@@ -5,7 +5,7 @@ import shutil
 
 from autotune.policy_utils import Policy
 
-BACKUP_COUNT = 1000 # Keep N old backups
+BACKUP_COUNT = 10 # Keep N old backups
 
 def validate_peer_memory(peer_mem):
     # Minimal: ensure dict and required keys

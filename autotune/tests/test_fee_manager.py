@@ -61,6 +61,9 @@ def mock_policy_with_minimal_required_keys(**overrides):
             "zero_ema_trigger": 1,
             "fee_bump_streak_threshold": 3,
         },
+        "features": {
+            "auto_htlc_max": 1,
+        },
         "htlc": {
             "ratio": 0.9,
             "reserve_deduction": 0.0101,
@@ -139,7 +142,6 @@ class TestFeeManager(unittest.TestCase):
     @patch(
         "autotune.autotune.get_forwarding_events", return_value=("fwd_day", "fwd_int")
     )
-    @patch("autotune.autotune.get_peers", return_value="raw_peers")
     @patch(
         "autotune.autotune.recommend_and_update_fees",
         return_value=(
@@ -166,7 +168,6 @@ class TestFeeManager(unittest.TestCase):
         mock_save,
         mock_write,
         mock_rec,
-        mock_getpeers,
         mock_getfwds,
     ):
         from autotune.fee_manager import FeeManager
